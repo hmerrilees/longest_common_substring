@@ -1,6 +1,19 @@
 use std::io::{self};
+struct Breadcrumb {
+    r#type: BreadcrumbType,
+    in_solution: bool,
+}
 
-#[derive(Clone, Debug)]
+
+#[derive(Clone)]
+enum BreadcrumbType {
+    Up,
+    Left,
+    Diagonal,
+    None,
+}
+
+#[derive(Clone)]
 struct DPEntry {
     score: usize,
     breadcrumb: BreadcrumbType,
@@ -60,14 +73,13 @@ fn lcs(a: &[char], b: &[char]) -> LCSResult {
         entry.in_solution = true;
         match entry.breadcrumb {
             Diagonal => {
-                a_i -= 1;
-                b_i -= 1;
-
                 solution_string.push(a[a_i - 1]);
-
                 // bookkeeping for in-context solution
                 a_indices.push(a_i - 1);
                 b_indices.push(b_i - 1);
+
+                a_i -= 1;
+                b_i -= 1;
             }
             Up => a_i -= 1,
             Left => b_i -= 1,
@@ -99,19 +111,18 @@ fn main() {
             dp_table,
         } = lcs(&a, &b);
 
+        let max_score_digits = dp_table.last().unwrap().last().unwrap().score.to_string().len();
+
         println!("\nSolution:\n{solution}\n");
         println!("In context:");
         print_with_color(&a, &a_indices);
         print_with_color(&b, &b_indices);
         println!();
 
-
-        let max_score_digits = dp_table.last().unwrap().last().unwrap().score.to_string().len();
-
         println!("DP Table:");
         for row in &dp_table {
             for entry in row {
-                print!("{:<max_score_digits$}", entry.score);
+                print!("{:<max_score_digits$} ", entry.score);
             }
             println!();
         }
@@ -120,13 +131,12 @@ fn main() {
         println!("Breadcrumbs:");
         for row in &dp_table {
             for entry in row {
-                print!("{}", Breadcrumb::new(entry.breadcrumb.clone(), entry.in_solution));
+                print!("{} ", Breadcrumb::new(entry.breadcrumb.clone(), entry.in_solution));
             }
             println!();
         }
-
-
         println!();
+
         println!("Interleaved:");
         for row in &dp_table {
             // print vertical arrows
@@ -152,12 +162,8 @@ fn main() {
     }
 }
 
-#[derive(Debug, Clone)]
-struct Breadcrumb {
-    r#type: BreadcrumbType,
-    in_solution: bool,
-}
 
+// Utilities
 impl Breadcrumb {
     fn new(r#type: BreadcrumbType, in_solution: bool) -> Self {
         Breadcrumb {
@@ -165,14 +171,6 @@ impl Breadcrumb {
             in_solution,
         }
     }
-}
-
-#[derive(Debug, Clone)]
-enum BreadcrumbType {
-    Up,
-    Left,
-    Diagonal,
-    None,
 }
 
 impl std::fmt::Display for Breadcrumb {
@@ -194,8 +192,6 @@ impl std::fmt::Display for Breadcrumb {
     }
 }
 
-
-// Utilities
 
 fn read_input(prompt: &str) -> Vec<char> {
     println!("{}", prompt);
