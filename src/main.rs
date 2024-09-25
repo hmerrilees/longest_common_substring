@@ -1,43 +1,151 @@
-use std::collections::HashMap;
+use std::io::{self};
+
+struct DPEntry {
+    score: usize,
+    breadcrumb: BreadcrumbType,
+    in_solution: bool, // bookkeeping to print green answer
+}
+
+fn lcs(a: &[char], b: &[char]) -> Res {
+    use BreadcrumbType::*;
+
+    let (m, n) = (a.len(), b.len());
+    let mut dp = vec![Vec::with_capacity(n + 1); m + 1];
+    let mut breadcrumbs = vec![Vec::with_capacity(n + 1); m + 1];
+
+    // Base cases
+    // First row
+    for i in 0..=m {
+        breadcrumbs[i].push(Breadcrumb::new(None));
+        dp[i].push(0);
+    }
+    // First col... we already got the first row, start at 1
+    for j in 1..=n {
+        breadcrumbs[0].push(Breadcrumb::new(None));
+        dp[0].push(0);
+    }
+
+    // Recursive cases, build the table top-down, left-to-right
+    for (i, char_a) in a.iter().enumerate().map(|(i, &c)| (i + 1, c)) {
+        for (j, char_b) in b.iter().enumerate().map(|(j, &c)| (j + 1, c)) {
+            if char_a == char_b {
+                let prev = dp[i - 1][j - 1]; // char match... discard both
+                dp[i].push(prev + 1);
+                breadcrumbs[i].push(Breadcrumb::new(Diagonal));
+            } else if dp[i - 1][j] > dp[i][j - 1] {
+                let prev = dp[i - 1][j]; // discard char_a
+                dp[i].push(prev);
+                breadcrumbs[i].push(Breadcrumb::new(Up));
+            } else {
+                // Note that breadcrumbs bias when the up/left cells are equal but we could have chosen to bias up too!
+                let prev = dp[i][j - 1]; // discard char_b
+                dp[i].push(prev);
+                breadcrumbs[i].push(Breadcrumb::new(Left));
+            };
+        }
+    }
+
+    let mut i = m;
+    let mut j = n;
+    let mut solution_string = String::new();
+    let mut a_indices = Vec::new();
+    let mut b_indices = Vec::new();
+
+    while i > 0 && j > 0 {
+        let bc = &mut breadcrumbs[i][j];
+        bc.in_solution = true;
+        match bc {
+            Breadcrumb {
+                r#type: Diagonal, ..
+            } => {
+                solution_string.push(a[i - 1]);
+
+                // some bookeeping for in-context solution printing
+                a_indices.push(i - 1);
+                b_indices.push(j - 1);
+
+                // move diagonally
+                i -= 1;
+                j -= 1;
+            }
+            Breadcrumb { r#type: Up, .. } => {
+                i -= 1; // move up
+            }
+            Breadcrumb { r#type: Left, ..  } => {
+                j -= 1; // move left
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    // we collected
+    solution_string = solution_string.chars().rev().collect();
+    a_indices.reverse();
+    b_indices.reverse();
+
+    Res {
+        solution: solution_string,
+        a_indices,
+        b_indices,
+        dp,
+        breadcrumbs,
+    }
+}
 
 fn main() {
-    //grab from stdin
     loop {
-        let mut a = String::new();
-        println!("Enter a string: ");
-        std::io::stdin().read_line(&mut a).unwrap();
-        let mut b = String::new();
-        println!("Enter another string: ");
-        std::io::stdin().read_line(&mut b).unwrap();
+        let a = read_input("Enter a string: ");
+        let b = read_input("Enter another string: ");
 
-        let a: Vec<char> = a.trim().chars().collect();
-        let b: Vec<char> = b.trim().chars().collect();
+        let Res {
+            solution, a_indices, b_indices, dp, breadcrumbs
+        } = lcs(&a, &b);
 
-        let (res, comparisons, assignments) = lcs(a.clone(), b.clone());
+        println!("\nSolution:\n {solution}");
+        println!("In context:");
+        print_with_color(&a, &a_indices);
+        print_with_color(&b, &b_indices);
 
-        println!("\nSolution:");
-
-        // print a with lcs indices colored green
-        for (i, char) in a.iter().enumerate() {
-            if res.a_indices.contains(&i) {
-                print!("\x1b[32m{}\x1b[0m", char);
-            } else {
-                print!("{}", char);
-            }
+        println!("DP Table:");
+        for row in dp {
+            println!("{:?}", row);
         }
         println!();
-        // print b with indices colored green
-        for (i, char) in b.iter().enumerate() {
-            if res.b_indices.contains(&i) {
-                print!("\x1b[32m{}\x1b[0m", char);
-            } else {
-                print!("{}", char);
+
+        println!("Breadcrumbs:");
+        for row in breadcrumbs {
+            for bc in row {
+                print!("{}", bc);
             }
+            println!();
         }
+
+        let width = dp.last().unwrap().last().unwrap().to_string().len();
+
         println!();
-        println!();
-        println!("Comparisons: {}", comparisons);
-        println!("Assignments: {}", assignments);
+        println!("Interleaved:");
+        for (dp_row, breadcrumb_row) in dp.iter().zip(breadcrumbs.iter()) {
+            // print vertical arrows
+            for bc in breadcrumb_row.iter() {
+                // min width of 2, ensure space before up arrow and after diagonal arrow to 
+                match bc.r#type {
+                    BreadcrumbType::Up => print!(" {bc:<width$}"),
+                    BreadcrumbType::Diagonal => print!("{bc:<width$} "),
+                    _ => print!("{:w$}", "", w=width+1)
+                }
+            }
+            println!();
+            // print dp entries and left arrows
+            for (dp, breadcrumb) in dp_row.iter().zip(breadcrumb_row.iter()) {
+                // left arrow
+                if matches!(breadcrumb.r#type, BreadcrumbType::Left) {
+                    print!("{breadcrumb}{:<width$}", dp, width = width);
+                } else {
+                    print!(" {:<width$}", dp, width = width);
+                }
+            }
+            println!();
+        }
         println!();
     }
 }
@@ -46,80 +154,75 @@ struct Res {
     solution: String,
     a_indices: Vec<usize>,
     b_indices: Vec<usize>,
+    dp: Vec<Vec<usize>>,
+    breadcrumbs: Vec<Vec<Breadcrumb>>,
 }
 
-fn lcs(a: Vec<char>, b: Vec<char>) -> (Res, usize, usize) {
-    let mut length_table: HashMap<(isize, isize), usize> = HashMap::new();
-    let mut breadcrumbs: HashMap<(isize, isize), Option<(isize, isize)>> = HashMap::new();
-    let mut comparisons = 0;
-    let mut assignments = 0;
+#[derive(Debug, Clone)]
+struct Breadcrumb {
+    r#type: BreadcrumbType,
+    in_solution: bool,
+}
 
-    for a_i in -1..(a.len() as isize) {
-        for b_i in -1..(b.len() as isize) {
-            comparisons += 2; // for the two if conditions
-            if (a_i == -1) || (b_i == -1) {
-                assignments += 2;
-                length_table.insert((a_i, b_i), 0);
-                breadcrumbs.insert((a_i, b_i), None);
-                continue;
-            }
-
-            let l = length_table.get(&(a_i - 1, b_i)).unwrap_or(&0);
-            let u = length_table.get(&(a_i, b_i - 1)).unwrap_or(&0);
-            comparisons += 1; // for the equality check
-            if a[a_i as usize] == b[b_i as usize] {
-                let ul = length_table.get(&(a_i - 1, b_i - 1)).unwrap_or(&0);
-                let longest = *[ul, l, u].iter().max().unwrap();
-                assignments += 2;
-                length_table.insert((a_i, b_i), longest + 1);
-                breadcrumbs.insert((a_i, b_i), Some((a_i - 1, b_i - 1)));
-            } else {
-                comparisons += 1; // for the l > u check
-                if l > u {
-                    assignments += 2;
-                    length_table.insert((a_i, b_i), *l);
-                    breadcrumbs.insert((a_i, b_i), Some((a_i - 1, b_i)));
-                } else {
-                    assignments += 2;
-                    length_table.insert((a_i, b_i), *u);
-                    breadcrumbs.insert((a_i, b_i), Some((a_i, b_i - 1)));
-                }
-            }
+impl Breadcrumb {
+    fn new(r#type: BreadcrumbType) -> Self {
+        Breadcrumb {
+            r#type,
+            in_solution: false, // should we make it green
         }
     }
+}
 
-    // Reconstruct the LCS with indices
-    let mut result = Vec::new();
-    let mut current = (a.len() as isize - 1, b.len() as isize - 1);
+#[derive(Debug, Clone)]
+enum BreadcrumbType {
+    Up,
+    Left,
+    Diagonal,
+    None,
+}
 
-    while let Some(prev) = breadcrumbs.get(&current).unwrap_or(&None) {
-        if prev.0 == current.0 - 1 && prev.1 == current.1 - 1 {
-            result.push((
-                a[current.0 as usize],
-                current.0 as usize,
-                current.1 as usize,
-            ));
+impl Default for BreadcrumbType {
+    fn default() -> Self {
+        BreadcrumbType::None
+    }
+}
+
+impl std::fmt::Display for Breadcrumb {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let c = match self.r#type {
+            BreadcrumbType::Up => '↑',
+            BreadcrumbType::Left => '←',
+            BreadcrumbType::Diagonal => '↖',
+            BreadcrumbType::None => '·',
+        };
+
+        let s = if self.in_solution {
+            format!("\x1b[32m{}\x1b[0m", c)
+        } else {
+            c.to_string()
+        };
+
+        f.pad(&s)
+    }
+}
+
+
+// Utilities
+
+fn read_input(prompt: &str) -> Vec<char> {
+    print!("{}", prompt);
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap();
+    input.trim().chars().collect()
+}
+
+fn print_with_color(s: &[char], indices: &[usize]) {
+    for (i, &c) in s.iter().enumerate() {
+        if indices.contains(&i) {
+            print!("\x1b[32m{}\x1b[0m", c);
+        } else {
+            print!("{}", c);
         }
-        current = *prev;
     }
-
-    let mut solution = String::new();
-    let mut a_indices = Vec::new();
-    let mut b_indices = Vec::new();
-
-    for (c, a_i, b_i) in result {
-        solution.push(c);
-        a_indices.push(a_i);
-        b_indices.push(b_i);
-    }
-
-    (
-        Res {
-            solution,
-            a_indices,
-            b_indices,
-    },
-        comparisons,
-        assignments,
-    )
+    println!();
 }
