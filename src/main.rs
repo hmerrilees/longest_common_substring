@@ -1,161 +1,155 @@
 use std::io::{self};
 
+#[derive(Clone, Debug)]
 struct DPEntry {
     score: usize,
     breadcrumb: BreadcrumbType,
-    in_solution: bool, // bookkeeping to print green answer
+    in_solution: bool,
 }
 
-fn lcs(a: &[char], b: &[char]) -> Res {
+impl DPEntry {
+    fn new(score: usize, breadcrumb: BreadcrumbType) -> Self {
+        DPEntry {
+            score,
+            breadcrumb,
+            in_solution: false,
+        }
+    }
+}
+
+struct LCSResult {
+    solution: String,
+    a_indices: Vec<usize>,
+    b_indices: Vec<usize>,
+    dp_table: Vec<Vec<DPEntry>>,
+}
+
+fn lcs(a: &[char], b: &[char]) -> LCSResult {
     use BreadcrumbType::*;
 
-    let (m, n) = (a.len(), b.len());
-    let mut dp = vec![Vec::with_capacity(n + 1); m + 1];
-    let mut breadcrumbs = vec![Vec::with_capacity(n + 1); m + 1];
-
-    // Base cases
-    // First row
-    for i in 0..=m {
-        breadcrumbs[i].push(Breadcrumb::new(None));
-        dp[i].push(0);
-    }
-    // First col... we already got the first row, start at 1
-    for j in 1..=n {
-        breadcrumbs[0].push(Breadcrumb::new(None));
-        dp[0].push(0);
-    }
+    let (a_size, b_size) = (a.len(), b.len());
+    let mut dp_table = vec![vec![DPEntry::new(0, None); b_size + 1]; a_size + 1];
 
     // Recursive cases, build the table top-down, left-to-right
     for (i, char_a) in a.iter().enumerate().map(|(i, &c)| (i + 1, c)) {
         for (j, char_b) in b.iter().enumerate().map(|(j, &c)| (j + 1, c)) {
-            if char_a == char_b {
-                let prev = dp[i - 1][j - 1]; // char match... discard both
-                dp[i].push(prev + 1);
-                breadcrumbs[i].push(Breadcrumb::new(Diagonal));
-            } else if dp[i - 1][j] > dp[i][j - 1] {
-                let prev = dp[i - 1][j]; // discard char_a
-                dp[i].push(prev);
-                breadcrumbs[i].push(Breadcrumb::new(Up));
+            if char_a == char_b { // match
+                let prev = dp_table[i - 1][j - 1].score;
+                dp_table[i][j] = DPEntry::new(prev + 1, Diagonal);
+            } else if dp_table[i - 1][j].score > dp_table[i][j - 1].score { // discard from a
+                let prev = dp_table[i - 1][j].score;
+                dp_table[i][j] = DPEntry::new(prev, Up);
             } else {
-                // Note that breadcrumbs bias when the up/left cells are equal but we could have chosen to bias up too!
-                let prev = dp[i][j - 1]; // discard char_b
-                dp[i].push(prev);
-                breadcrumbs[i].push(Breadcrumb::new(Left));
-            };
+                let prev = dp_table[i][j - 1].score; // discard from b
+                dp_table[i][j] = DPEntry::new(prev, Left);
+            }
         }
     }
 
-    let mut i = m;
-    let mut j = n;
     let mut solution_string = String::new();
     let mut a_indices = Vec::new();
     let mut b_indices = Vec::new();
 
-    while i > 0 && j > 0 {
-        let bc = &mut breadcrumbs[i][j];
-        bc.in_solution = true;
-        match bc {
-            Breadcrumb {
-                r#type: Diagonal, ..
-            } => {
-                solution_string.push(a[i - 1]);
+    // start in the bottom right corner (end of both strings)
+    let mut a_i = a_size;
+    let mut b_i = b_size;
 
-                // some bookeeping for in-context solution printing
-                a_indices.push(i - 1);
-                b_indices.push(j - 1);
+    // walk back up the breadcrumbs
+    while a_i > 0 && b_i > 0 {
+        let entry = &mut dp_table[a_i][b_i];
+        entry.in_solution = true;
+        match entry.breadcrumb {
+            Diagonal => {
+                a_i -= 1;
+                b_i -= 1;
 
-                // move diagonally
-                i -= 1;
-                j -= 1;
+                solution_string.push(a[a_i - 1]);
+
+                // bookkeeping for in-context solution
+                a_indices.push(a_i - 1);
+                b_indices.push(b_i - 1);
             }
-            Breadcrumb { r#type: Up, .. } => {
-                i -= 1; // move up
-            }
-            Breadcrumb { r#type: Left, ..  } => {
-                j -= 1; // move left
-            }
-            _ => unreachable!(),
+            Up => a_i -= 1,
+            Left => b_i -= 1,
+            None => break,
         }
     }
 
-    // we collected
     solution_string = solution_string.chars().rev().collect();
     a_indices.reverse();
     b_indices.reverse();
 
-    Res {
+    LCSResult {
         solution: solution_string,
         a_indices,
         b_indices,
-        dp,
-        breadcrumbs,
+        dp_table,
     }
 }
 
 fn main() {
     loop {
-        let a = read_input("Enter a string: ");
-        let b = read_input("Enter another string: ");
+        let a = read_input("Enter the first string: ");
+        let b = read_input("Enter the second string: ");
 
-        let Res {
-            solution, a_indices, b_indices, dp, breadcrumbs
+        let LCSResult {
+            solution,
+            a_indices,
+            b_indices,
+            dp_table,
         } = lcs(&a, &b);
 
-        println!("\nSolution:\n {solution}");
+        println!("\nSolution:\n{solution}\n");
         println!("In context:");
         print_with_color(&a, &a_indices);
         print_with_color(&b, &b_indices);
+        println!();
+
+
+        let max_score_digits = dp_table.last().unwrap().last().unwrap().score.to_string().len();
 
         println!("DP Table:");
-        for row in dp {
-            println!("{:?}", row);
+        for row in &dp_table {
+            for entry in row {
+                print!("{:<max_score_digits$}", entry.score);
+            }
+            println!();
         }
         println!();
 
         println!("Breadcrumbs:");
-        for row in breadcrumbs {
-            for bc in row {
-                print!("{}", bc);
+        for row in &dp_table {
+            for entry in row {
+                print!("{}", Breadcrumb::new(entry.breadcrumb.clone(), entry.in_solution));
             }
             println!();
         }
 
-        let width = dp.last().unwrap().last().unwrap().to_string().len();
 
         println!();
         println!("Interleaved:");
-        for (dp_row, breadcrumb_row) in dp.iter().zip(breadcrumbs.iter()) {
+        for row in &dp_table {
             // print vertical arrows
-            for bc in breadcrumb_row.iter() {
-                // min width of 2, ensure space before up arrow and after diagonal arrow to 
-                match bc.r#type {
-                    BreadcrumbType::Up => print!(" {bc:<width$}"),
-                    BreadcrumbType::Diagonal => print!("{bc:<width$} "),
-                    _ => print!("{:w$}", "", w=width+1)
+            for entry in row {
+                match entry.breadcrumb {
+                    BreadcrumbType::Up => print!(" {:<max_score_digits$}", Breadcrumb::new(entry.breadcrumb.clone(), entry.in_solution)),
+                    BreadcrumbType::Diagonal => print!("{:<max_score_digits$} ", Breadcrumb::new(entry.breadcrumb.clone(), entry.in_solution)),
+                    _ => print!("{:w$}", "", w=max_score_digits+1)
                 }
             }
             println!();
             // print dp entries and left arrows
-            for (dp, breadcrumb) in dp_row.iter().zip(breadcrumb_row.iter()) {
-                // left arrow
-                if matches!(breadcrumb.r#type, BreadcrumbType::Left) {
-                    print!("{breadcrumb}{:<width$}", dp, width = width);
+            for entry in row {
+                if matches!(entry.breadcrumb, BreadcrumbType::Left) {
+                    print!("{}{:<max_score_digits$}", Breadcrumb::new(entry.breadcrumb.clone(), entry.in_solution), entry.score);
                 } else {
-                    print!(" {:<width$}", dp, width = width);
+                    print!(" {:<max_score_digits$}", entry.score);
                 }
             }
             println!();
         }
         println!();
     }
-}
-
-struct Res {
-    solution: String,
-    a_indices: Vec<usize>,
-    b_indices: Vec<usize>,
-    dp: Vec<Vec<usize>>,
-    breadcrumbs: Vec<Vec<Breadcrumb>>,
 }
 
 #[derive(Debug, Clone)]
@@ -165,10 +159,10 @@ struct Breadcrumb {
 }
 
 impl Breadcrumb {
-    fn new(r#type: BreadcrumbType) -> Self {
+    fn new(r#type: BreadcrumbType, in_solution: bool) -> Self {
         Breadcrumb {
             r#type,
-            in_solution: false, // should we make it green
+            in_solution,
         }
     }
 }
@@ -179,12 +173,6 @@ enum BreadcrumbType {
     Left,
     Diagonal,
     None,
-}
-
-impl Default for BreadcrumbType {
-    fn default() -> Self {
-        BreadcrumbType::None
-    }
 }
 
 impl std::fmt::Display for Breadcrumb {
@@ -210,9 +198,10 @@ impl std::fmt::Display for Breadcrumb {
 // Utilities
 
 fn read_input(prompt: &str) -> Vec<char> {
-    print!("{}", prompt);
+    println!("{}", prompt);
     let mut input = String::new();
     io::stdin().read_line(&mut input).unwrap();
+    println!();
     input.trim().chars().collect()
 }
 
