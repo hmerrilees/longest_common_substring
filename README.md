@@ -1,4 +1,6 @@
-## step 1--get rust.
+## step 1
+Get rust:
 `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-## step 2--run the program.
+## Step 2
+Run the program:
 `cargo run --release`
